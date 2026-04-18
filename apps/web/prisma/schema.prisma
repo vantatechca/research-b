@@ -1,0 +1,213 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [uuidOssp(map: "uuid-ossp")]
+}
+
+// ============================================================
+// CORE TABLES
+// ============================================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  settings  Json     @default("{}")
+
+  feedback           IdeaFeedback[]
+  goldenRules        GoldenRule[]
+  learnedPreferences UserPreferenceLearned[]
+  chatThreads        ChatThread[]
+
+  @@map("users")
+}
+
+model Idea {
+  id               String   @id @default(uuid()) @db.Uuid
+  title            String
+  slug             String   @unique
+  summary          String
+  detailedAnalysis String?  @map("detailed_analysis")
+  status           String   @default("pending")
+
+  // Scoring
+  compositeScore        Float @default(0) @map("composite_score")
+  trendScore            Float @default(0) @map("trend_score")
+  demandScore           Float @default(0) @map("demand_score")
+  competitionScore      Float @default(0) @map("competition_score")
+  feasibilityScore      Float @default(0) @map("feasibility_score")
+  revenuePotentialScore Float @default(0) @map("revenue_potential_score")
+
+  // Categorization
+  peptideCategory String[] @map("peptide_category")
+  productType     String[] @map("product_type")
+  subNiche        String[] @map("sub_niche")
+  targetAudience  String?  @map("target_audience")
+
+  // Evidence
+  sourceUrls       String[] @map("source_urls")
+  sourcePlatforms  String[] @map("source_platforms")
+  evidenceSnapshot Json     @default("{}") @map("evidence_snapshot")
+
+  // Compliance
+  complianceFlag  String  @default("green") @map("compliance_flag")
+  complianceNotes String? @map("compliance_notes")
+
+  // Competitor intel
+  existingProducts Json    @default("[]") @map("existing_products")
+  competitorGaps   String? @map("competitor_gaps")
+
+  // Metadata
+  discoveredAt    DateTime @default(now()) @map("discovered_at")
+  lastUpdated     DateTime @default(now()) @updatedAt @map("last_updated")
+  discoverySource String?  @map("discovery_source")
+  aiModelUsed     String?  @map("ai_model_used")
+
+  // Relations
+  signals     IdeaSignal[]
+  trends      IdeaTrend[]
+  feedback    IdeaFeedback[]
+  chatThreads ChatThread[]
+
+  @@index([status])
+  @@index([compositeScore(sort: Desc)])
+  @@index([discoveredAt(sort: Desc)])
+  @@map("ideas")
+}
+
+model IdeaSignal {
+  id             String   @id @default(uuid()) @db.Uuid
+  ideaId         String   @map("idea_id") @db.Uuid
+  signalType     String   @map("signal_type")
+  sourceUrl      String   @map("source_url")
+  title          String?
+  rawContent     String?  @map("raw_content")
+  metadata       Json     @default("{}")
+  relevanceScore Float    @default(0) @map("relevance_score")
+  scrapedAt      DateTime @default(now()) @map("scraped_at")
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId])
+  @@map("idea_signals")
+}
+
+model IdeaTrend {
+  id          String   @id @default(uuid()) @db.Uuid
+  ideaId      String   @map("idea_id") @db.Uuid
+  metricType  String   @map("metric_type")
+  metricValue Float    @map("metric_value")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, recordedAt])
+  @@map("idea_trends")
+}
+
+// ============================================================
+// USER FEEDBACK & LEARNING
+// ============================================================
+
+model IdeaFeedback {
+  id        String   @id @default(uuid()) @db.Uuid
+  ideaId    String   @map("idea_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  action    String
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([ideaId])
+  @@index([userId])
+  @@map("idea_feedback")
+}
+
+model GoldenRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  ruleType    String   @map("rule_type")
+  ruleText    String   @map("rule_text")
+  weight      Float    @default(1.0)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdFrom String?  @map("created_from")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("golden_rules")
+}
+
+model UserPreferenceLearned {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  preferenceKey   String   @map("preference_key")
+  preferenceValue Json     @map("preference_value")
+  confidence      Float    @default(0.5)
+  lastUpdated     DateTime @default(now()) @updatedAt @map("last_updated")
+  derivedFrom     String[] @map("derived_from") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_preferences_learned")
+}
+
+// ============================================================
+// CHAT / CONVERSATION
+// ============================================================
+
+model ChatThread {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  ideaId        String?  @map("idea_id") @db.Uuid
+  threadType    String   @map("thread_type")
+  title         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+
+  user     User          @relation(fields: [userId], references: [id])
+  idea     Idea?         @relation(fields: [ideaId], references: [id])
+  messages ChatMessage[]
+
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  threadId  String   @map("thread_id") @db.Uuid
+  role      String
+  content   String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("chat_messages")
+}
+
+// ============================================================
+// SCRAPER STATE
+// ============================================================
+
+model ScraperRun {
+  id             String    @id @default(uuid()) @db.Uuid
+  scraperName    String    @map("scraper_name")
+  startedAt      DateTime  @default(now()) @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  status         String    @default("running")
+  signalsFound   Int       @default(0) @map("signals_found")
+  ideasGenerated Int       @default(0) @map("ideas_generated")
+  errorLog       String?   @map("error_log")
+
+  @@map("scraper_runs")
+}

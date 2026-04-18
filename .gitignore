@@ -1,0 +1,16 @@
+@"
+node_modules/
+.env
+.env.local
+*.log
+.turbo/
+.next/
+dist/
+build/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+"@ | Out-File -FilePath .gitignore -Encoding utf8

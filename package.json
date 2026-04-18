@@ -1,0 +1,20 @@
+{
+  "name": "peptideiq",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:push": "pnpm --filter @peptideiq/web exec prisma db push",
+    "db:seed": "pnpm --filter @peptideiq/web exec prisma db seed",
+    "db:generate": "pnpm --filter @peptideiq/web exec prisma generate",
+    "db:studio": "pnpm --filter @peptideiq/web exec prisma studio"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.6"
+  }
+}
