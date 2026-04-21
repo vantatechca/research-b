@@ -270,13 +270,13 @@ export function Topbar() {
 
               <div className="py-1">
                 <Link
-                  href="/settings"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <UserCircle className="h-4 w-4" />
-                  Profile
-                </Link>
+                  href="/profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+>
+                     <UserCircle className="h-4 w-4" />
+                     Profile
+                  </Link>
                 <Link
                   href="/settings"
                   onClick={() => setMenuOpen(false)}
