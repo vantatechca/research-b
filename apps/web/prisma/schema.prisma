@@ -20,12 +20,13 @@ model User {
   name      String?
   createdAt DateTime @default(now()) @map("created_at")
   settings  Json     @default("{}")
+  
 
   feedback           IdeaFeedback[]
   goldenRules        GoldenRule[]
   learnedPreferences UserPreferenceLearned[]
   chatThreads        ChatThread[]
-
+  notifications      Notification[]
   @@map("users")
 }
 
@@ -210,4 +211,21 @@ model ScraperRun {
   errorLog       String?   @map("error_log")
 
   @@map("scraper_runs")
+}
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String   // "idea_approved", "idea_declined", "scrape_completed", "system", etc.
+  title     String
+  message   String?
+  link      String?  // Optional URL to navigate when clicked
+  metadata  Json?    // Extra data (idea_id, etc.)
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
