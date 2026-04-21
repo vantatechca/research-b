@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+// UUID v4 format validator
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -13,6 +16,12 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    // 🛡️ Guard: reject non-UUID values (prevents Prisma P2007 crashes
+    // when status-filter URLs like /api/ideas/approved hit this route)
+    if (!UUID_REGEX.test(id)) {
+      return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
+    }
 
     const idea = await prisma.idea.findUnique({
       where: { id },
@@ -68,6 +77,12 @@ export async function PATCH(
     }
 
     const { id } = await params;
+
+    // 🛡️ Guard: reject non-UUID values
+    if (!UUID_REGEX.test(id)) {
+      return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
+    }
+
     const body = await request.json();
 
     // Only allow updating specific fields
