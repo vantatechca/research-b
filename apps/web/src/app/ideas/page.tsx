@@ -39,7 +39,17 @@ interface Idea {
 /*  Ideas feed page                                                    */
 /* ------------------------------------------------------------------ */
 
-function IdeasPageContent() {
+interface IdeasPageContentProps {
+  statusFilter?: string;
+  pageTitle?: string;
+  pageSubtitle?: string;
+}
+
+function IdeasPageContent({
+  statusFilter,
+  pageTitle = "Ideas",
+  pageSubtitle,
+}: IdeasPageContentProps = {}) {
   const searchParams = useSearchParams();
   const filters = useAppStore((s) => s.filters);
 
@@ -58,8 +68,8 @@ function IdeasPageContent() {
       params.set("page", pg.toString());
       params.set("limit", LIMIT.toString());
 
-      // Use URL params first, then store filters
-      const status = searchParams.get("status") ?? filters.status;
+      // Priority: prop > URL param > store filter
+      const status = statusFilter ?? searchParams.get("status") ?? filters.status;
       if (status && status !== "all") params.set("status", status);
 
       // sortBy in store uses "field:order" format (e.g. "compositeScore:desc")
@@ -88,7 +98,7 @@ function IdeasPageContent() {
 
       return params.toString();
     },
-    [searchParams, filters]
+    [searchParams, filters, statusFilter]
   );
 
   const fetchIdeas = useCallback(
@@ -138,11 +148,11 @@ function IdeasPageContent() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Ideas</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
             <p className="mt-1 text-sm text-gray-500">
               {loading
-                ? "Loading ideas..."
-                : `${total} idea${total !== 1 ? "s" : ""} found`}
+                ? "Loading..."
+                : pageSubtitle ?? `${total} idea${total !== 1 ? "s" : ""} found`}
             </p>
           </div>
           <div className="flex items-center gap-2">
