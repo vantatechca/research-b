@@ -101,13 +101,11 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
 
-  // Match sidebar item to current URL including query string
+  // Fixed: correctly matches path + query string for active state
   function isActive(href: string): boolean {
-    if (!href.includes('?')) {
-      return pathname === href;
-    }
     const [targetPath, targetQuery] = href.split('?');
     if (pathname !== targetPath) return false;
+    if (!targetQuery) return true;
     const targetParams = new URLSearchParams(targetQuery);
     for (const [key, value] of targetParams.entries()) {
       if (searchParams.get(key) !== value) return false;
