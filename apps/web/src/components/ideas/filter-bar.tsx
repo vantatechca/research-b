@@ -3,15 +3,16 @@
 import React from 'react';
 import { RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppStore, type IdeaFilters } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 
 const statusOptions = [
   { value: 'all', label: 'All' },
-  { value: 'new', label: 'New' },
+  { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
+  { value: 'starred', label: 'Starred' },
   { value: 'declined', label: 'Declined' },
   { value: 'archived', label: 'Archived' },
 ];
@@ -23,20 +24,44 @@ const complianceOptions = [
   { value: 'red', label: 'High Risk' },
 ];
 
+// Matches API sort field whitelist: compositeScore, trendScore, demandScore,
+// competitionScore, discoveredAt, title
 const sortOptions = [
-  { value: 'newest', label: 'Newest First' },
-  { value: 'oldest', label: 'Oldest First' },
-  { value: 'score_desc', label: 'Highest Score' },
-  { value: 'score_asc', label: 'Lowest Score' },
+  { value: 'compositeScore:desc', label: 'Highest Score' },
+  { value: 'compositeScore:asc', label: 'Lowest Score' },
+  { value: 'discoveredAt:desc', label: 'Newest First' },
+  { value: 'discoveredAt:asc', label: 'Oldest First' },
+  { value: 'trendScore:desc', label: 'Top Trending' },
+  { value: 'demandScore:desc', label: 'Highest Demand' },
+  { value: 'title:asc', label: 'Title (A–Z)' },
 ];
 
+// Product types that actually exist in the DB
 const productTypeOptions = [
-  'Supplement',
-  'Topical',
-  'Cosmetic',
-  'Injection',
-  'Nasal Spray',
-  'Powder',
+  { value: 'saas', label: 'SaaS / Tool' },
+  { value: 'calculator', label: 'Calculator' },
+  { value: 'ai_tool', label: 'AI Tool' },
+  { value: 'ebook', label: 'Ebook' },
+  { value: 'course', label: 'Course' },
+  { value: 'membership', label: 'Membership' },
+  { value: 'community', label: 'Community' },
+  { value: 'template', label: 'Template' },
+  { value: 'audio', label: 'Audio' },
+  { value: 'tool', label: 'Tool' },
+];
+
+// Common peptide categories (extend as needed)
+const peptideCategoryOptions = [
+  { value: 'BPC-157', label: 'BPC-157' },
+  { value: 'CJC-1295', label: 'CJC-1295' },
+  { value: 'ipamorelin', label: 'Ipamorelin' },
+  { value: 'GHK-Cu', label: 'GHK-Cu' },
+  { value: 'thymosin-alpha-1', label: 'Thymosin α-1' },
+  { value: 'semaglutide', label: 'Semaglutide' },
+  { value: 'tirzepatide', label: 'Tirzepatide' },
+  { value: 'epithalon', label: 'Epithalon' },
+  { value: 'PT-141', label: 'PT-141' },
+  { value: 'general', label: 'General' },
 ];
 
 export function FilterBar() {
@@ -55,8 +80,9 @@ export function FilterBar() {
     filters.scoreRange[0] !== 0 ||
     filters.scoreRange[1] !== 100 ||
     filters.productTypes.length > 0 ||
+    (filters.peptideCategories?.length ?? 0) > 0 ||
     filters.compliance !== 'all' ||
-    filters.sortBy !== 'newest';
+    filters.sortBy !== 'compositeScore:desc';
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -105,22 +131,43 @@ export function FilterBar() {
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
             Product Type
           </label>
-          <div className="flex flex-wrap gap-1.5">
-            {productTypeOptions.map((type) => (
+          <div className="flex flex-wrap gap-1.5 max-w-md">
+            {productTypeOptions.map((opt) => (
               <label
-                key={type}
+                key={opt.value}
                 className="flex items-center gap-1.5 cursor-pointer"
               >
                 <input
                   type="checkbox"
-                  checked={filters.productTypes.includes(type)}
-                  onChange={() => toggleProductType(type)}
+                  checked={filters.productTypes.includes(opt.value)}
+                  onChange={() => toggleProductType(opt.value)}
                   className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <span className="text-xs text-gray-600">{type}</span>
+                <span className="text-xs text-gray-600">{opt.label}</span>
               </label>
             ))}
           </div>
+        </div>
+
+        {/* Peptide category */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Peptide
+          </label>
+          <Select
+            options={[
+              { value: '', label: 'All Peptides' },
+              ...peptideCategoryOptions,
+            ]}
+            value={filters.peptideCategories?.[0] ?? ''}
+            onChange={(e) =>
+              setFilter(
+                'peptideCategories',
+                e.target.value ? [e.target.value] : []
+              )
+            }
+            className="h-8 text-xs"
+          />
         </div>
 
         {/* Compliance */}

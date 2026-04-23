@@ -79,7 +79,11 @@ export async function GET(request: NextRequest) {
     };
     const orderField = allowedSortFields[sortBy] || 'compositeScore';
 
-    const [ideas, total] = await Promise.all([
+    // Compute day boundary (midnight today, UTC)
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+
+    const [ideas, total, newToday, approvedCount, totalForRate] = await Promise.all([
       prisma.idea.findMany({
         where,
         orderBy: { [orderField]: sortOrder },
@@ -95,7 +99,16 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.idea.count({ where }),
+      prisma.idea.count({
+        where: { discoveredAt: { gte: startOfToday } },
+      }),
+      prisma.idea.count({ where: { status: 'approved' } }),
+      prisma.idea.count(),
     ]);
+
+    const approvalRate = totalForRate > 0
+      ? Math.round((approvedCount / totalForRate) * 100)
+      : 0;
 
     return NextResponse.json({
       ideas,
@@ -105,6 +118,8 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
+      newToday,
+      approvalRate,
     });
   } catch (error) {
     console.error('List ideas error:', error);

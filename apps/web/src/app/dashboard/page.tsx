@@ -80,7 +80,7 @@ export default function DashboardPage() {
       const scrapersData = await scrapersRes.json().catch(() => null);
 
       setStats({
-        totalIdeas: ideasData?.total ?? 0,
+        totalIdeas: ideasData?.pagination?.total ?? ideasData?.total ?? 0,
         newToday: ideasData?.newToday ?? 0,
         approvalRate: ideasData?.approvalRate ?? 0,
         topNiche: trendsData?.topNiche ?? "N/A",
@@ -97,15 +97,24 @@ export default function DashboardPage() {
       );
 
       const recentActivity: ActivityItem[] = [];
-      if (scrapersData?.history) {
-        (scrapersData.history as { id?: string; message?: string; timestamp?: string }[])
+      if (scrapersData?.runs) {
+        (scrapersData.runs as Array<{
+          id: string;
+          scraperName: string;
+          status: string;
+          signalsFound: number;
+          ideasGenerated: number;
+          startedAt: string;
+          completedAt: string | null;
+        }>)
           .slice(0, 8)
-          .forEach((h: { id?: string; message?: string; timestamp?: string }) => {
+          .forEach((r) => {
+            const verb = r.status === 'completed' ? 'completed' : r.status === 'running' ? 'running' : r.status === 'failed' ? 'failed' : r.status;
             recentActivity.push({
-              id: h.id ?? crypto.randomUUID(),
+              id: r.id,
               type: "scrape",
-              message: h.message ?? "Scraper run completed",
-              timestamp: h.timestamp ?? new Date().toISOString(),
+              message: `${r.scraperName} scraper ${verb} — ${r.signalsFound} signals, ${r.ideasGenerated} ideas`,
+              timestamp: r.completedAt ?? r.startedAt,
             });
           });
       }

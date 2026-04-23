@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Lightbulb,
@@ -32,11 +32,11 @@ interface NavItem {
 
 const mainNav: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { label: 'New Ideas', href: '/ideas', icon: Lightbulb, badge: 12 },
-  { label: 'Approved', href: '/ideas/approved', icon: CheckCircle },
-  { label: 'Declined', href: '/ideas/declined', icon: XCircle },
-  { label: 'Archived', href: '/ideas/archived', icon: Archive },
-  { label: 'Starred', href: '/ideas/starred', icon: Star },
+  { label: 'New Ideas', href: '/ideas?status=pending', icon: Lightbulb },
+  { label: 'Approved', href: '/ideas?status=approved', icon: CheckCircle },
+  { label: 'Declined', href: '/ideas?status=declined', icon: XCircle },
+  { label: 'Archived', href: '/ideas?status=archived', icon: Archive },
+  { label: 'Starred', href: '/ideas?status=starred', icon: Star },
 ];
 
 const secondaryNav: NavItem[] = [
@@ -98,7 +98,22 @@ function NavLink({
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
+
+  // Match sidebar item to current URL including query string
+  function isActive(href: string): boolean {
+    if (!href.includes('?')) {
+      return pathname === href;
+    }
+    const [targetPath, targetQuery] = href.split('?');
+    if (pathname !== targetPath) return false;
+    const targetParams = new URLSearchParams(targetQuery);
+    for (const [key, value] of targetParams.entries()) {
+      if (searchParams.get(key) !== value) return false;
+    }
+    return true;
+  }
 
   return (
     <aside
@@ -123,7 +138,7 @@ export function Sidebar() {
           <NavLink
             key={item.href}
             item={item}
-            active={pathname === item.href}
+            active={isActive(item.href)}
             collapsed={sidebarCollapsed}
           />
         ))}
@@ -135,7 +150,7 @@ export function Sidebar() {
           <NavLink
             key={item.href}
             item={item}
-            active={pathname === item.href}
+            active={isActive(item.href)}
             collapsed={sidebarCollapsed}
           />
         ))}

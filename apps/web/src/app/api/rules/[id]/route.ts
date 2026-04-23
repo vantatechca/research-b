@@ -24,12 +24,19 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const allowedFields = ['ruleText', 'weight', 'isActive'];
+    // Accept both old and new field names
     const updateData: Record<string, unknown> = {};
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        updateData[field] = body[field];
-      }
+
+    const ruleText = body.ruleText ?? body.text;
+    if (ruleText !== undefined) updateData.ruleText = ruleText;
+
+    const isActive = body.isActive ?? body.active;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    if (body.weight !== undefined) {
+      // Frontend may send 0-100 int; DB stores 0-2 float
+      const w = Number(body.weight);
+      updateData.weight = w > 2 ? w / 50 : w;
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -39,10 +46,21 @@ export async function PATCH(
       );
     }
 
-    const rule = await prisma.goldenRule.update({
+    const dbRule = await prisma.goldenRule.update({
       where: { id },
       data: updateData,
     });
+
+    // Return in frontend format
+    const rule = {
+      id: dbRule.id,
+      type: dbRule.ruleType,
+      text: dbRule.ruleText,
+      weight: Math.round((dbRule.weight ?? 1) * 50),
+      active: dbRule.isActive,
+      createdFrom: dbRule.createdFrom,
+      createdAt: dbRule.createdAt,
+    };
 
     return NextResponse.json({ rule });
   } catch (error) {

@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
         count: s._count.status,
       })),
       topIdeas: topIdeasByScore,
+      topNiche: topIdeasByScore[0]?.peptideCategory?.[0] ?? "N/A",
       trendsByMetric,
     });
   } catch (error) {

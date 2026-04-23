@@ -17,16 +17,22 @@ interface Idea {
   id: string;
   title: string;
   slug: string;
-  productType: string;
-  peptideCategory: string;
+  productType: string[];
+  peptideCategory: string[];
+  subNiche?: string[];
   compositeScore: number;
+  trendScore: number;
   demandScore: number;
   competitionScore: number;
+  feasibilityScore?: number;
+  revenuePotentialScore?: number;
   complianceFlag: string;
   status: string;
   summary: string;
-  sources: string[];
-  createdAt: string;
+  sourceUrls?: string[];
+  sourcePlatforms?: string[];
+  discoveredAt: string;
+  lastUpdated?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -56,8 +62,15 @@ function IdeasPageContent() {
       const status = searchParams.get("status") ?? filters.status;
       if (status && status !== "all") params.set("status", status);
 
-      const sort = searchParams.get("sort") ?? filters.sortBy;
-      if (sort && sort !== "newest") params.set("sort", sort);
+      // sortBy in store uses "field:order" format (e.g. "compositeScore:desc")
+      const sortCombined = searchParams.get("sort") ?? filters.sortBy;
+      if (sortCombined) {
+        const [sortField, sortOrder] = sortCombined.includes(":")
+          ? sortCombined.split(":")
+          : [sortCombined, "desc"];
+        params.set("sortBy", sortField);
+        params.set("sortOrder", sortOrder);
+      }
 
       if (filters.scoreRange[0] > 0)
         params.set("minScore", filters.scoreRange[0].toString());
@@ -65,12 +78,13 @@ function IdeasPageContent() {
         params.set("maxScore", filters.scoreRange[1].toString());
       if (filters.compliance && filters.compliance !== "all")
         params.set("compliance", filters.compliance);
+      // API expects singular names + single value. Use first selected filter if multiple.
       if (filters.productTypes.length)
-        params.set("productTypes", filters.productTypes.join(","));
+        params.set("productType", filters.productTypes[0]);
       if (filters.peptideCategories.length)
-        params.set("peptideCategories", filters.peptideCategories.join(","));
+        params.set("peptideCategory", filters.peptideCategories[0]);
       if (filters.sources.length)
-        params.set("sources", filters.sources.join(","));
+        params.set("sourcePlatform", filters.sources[0]);
 
       return params.toString();
     },
@@ -87,7 +101,7 @@ function IdeasPageContent() {
         const data = await res.json();
 
         const items: Idea[] = data.ideas ?? data.items ?? [];
-        setTotal(data.total ?? items.length);
+        setTotal(data.pagination?.total ?? data.total ?? items.length);
 
         if (append) {
           setIdeas((prev) => [...prev, ...items]);

@@ -19,7 +19,7 @@ const defaultFilters: IdeaFilters = {
   compliance: 'all',
   sources: [],
   dateRange: { from: null, to: null },
-  sortBy: 'newest',
+  sortBy: 'compositeScore:desc',
 };
 
 interface AppState {

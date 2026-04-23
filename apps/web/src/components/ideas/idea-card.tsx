@@ -1,7 +1,7 @@
 'use client';
-
 import React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   CheckCircle,
   XCircle,
@@ -55,7 +55,8 @@ interface IdeaCardProps {
 }
 
 export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
-  const { toggleChat, setChatType, setActiveChatThread } = useAppStore();
+  const router = useRouter();
+  const { toggleChat, setChatType, setActiveChatThread, setFilter } = useAppStore();
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
 
   // Normalize field names for flexibility
@@ -84,7 +85,57 @@ export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
     } catch {
       // silently fail
     } finally {
+      setActionLoading(null);async function handleAction(action: string) {
+    if (actionLoading) return;
+    setActionLoading(action);
+    try {
+      const res = await fetch(`/api/ideas/${idea.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+
+      if (!res.ok) {
+        console.error('Feedback action failed:', res.status);
+        return;
+      }
+
+      onAction?.(idea.id, action);
+
+      // Auto-navigate to the corresponding status page
+      onAction?.(idea.id, action);
+
+      // Map action to status value and target path
+      const statusMap: Record<string, string> = {
+        approve: 'approved',
+        decline: 'declined',
+        star: 'starred',
+        archive: 'archived',
+      };
+      const navigationMap: Record<string, string> = {
+        approve: '/ideas/approved',
+        decline: '/ideas/declined',
+        star: '/ideas/starred',
+        archive: '/ideas/archived',
+      };
+
+      // Sync the FilterBar status pill with the action
+      const newStatus = statusMap[action];
+      if (newStatus) {
+        setFilter('status', newStatus);
+      }
+
+      // Navigate to the corresponding status page
+      const targetPath = navigationMap[action];
+      if (targetPath) {
+        router.push(targetPath);
+      }
+    } catch (err) {
+      console.error('Feedback action error:', err);
+    } finally {
       setActionLoading(null);
+    }
+  }
     }
   }
 

@@ -1,8 +1,13 @@
+import 'dotenv/config';
 import { PrismaClient } from '../src/generated/prisma/client';
+import type { Prisma } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hashSync } from 'bcryptjs';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://peptideiq:peptideiq@localhost:5432/peptideiq';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL not set. Check your .env file.');
+}
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
@@ -349,7 +354,7 @@ async function main() {
     });
 
     // Add signals for each idea
-    const signalSets: Array<{ ideaId: string; signalType: string; sourceUrl: string; title: string; rawContent: string; metadata: Record<string, unknown>; relevanceScore: number }> = [];
+    const signalSets: Prisma.IdeaSignalCreateManyInput[] = [];
 
     if (ideaData.sourcePlatforms.includes('reddit')) {
       signalSets.push({
@@ -473,8 +478,63 @@ async function main() {
     { scraperName: 'reddit', status: 'running', signalsFound: 0, ideasGenerated: 0 },
   ];
 
-  for (const run of scraperRuns) {
+for (const run of scraperRuns) {
     await prisma.scraperRun.create({ data: run });
+  }
+
+  // Clear existing notifications for this user (safe re-run)
+  await prisma.notification.deleteMany({ where: { userId: user.id } });
+
+  // Seed notifications
+  const notifications = [
+    {
+      userId: user.id,
+      type: 'system',
+      title: 'Welcome to PeptideIQ!',
+      message: 'Explore 12 fresh peptide product ideas pre-seeded for you.',
+      link: '/ideas',
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 2), // 2 min ago
+    },
+    {
+      userId: user.id,
+      type: 'new_idea',
+      title: 'New idea discovered',
+      message: 'BPC-157 Dosage & Reconstitution Calculator App added to your pipeline.',
+      link: '/ideas',
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 15), // 15 min ago
+    },
+    {
+      userId: user.id,
+      type: 'scrape_completed',
+      title: 'Reddit scraper completed',
+      message: '23 signals found, 4 ideas generated.',
+      link: null,
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 32), // 32 min ago
+    },
+    {
+      userId: user.id,
+      type: 'scrape_completed',
+      title: 'YouTube scraper completed',
+      message: '18 signals found, 3 ideas generated.',
+      link: null,
+      read: true,
+      createdAt: new Date(Date.now() - 1000 * 60 * 45),
+    },
+    {
+      userId: user.id,
+      type: 'system',
+      title: 'Golden rules updated',
+      message: '9 golden rules loaded for your account.',
+      link: '/rules',
+      read: true,
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
+    },
+  ];
+  for (const notif of notifications) {
+    await prisma.notification.create({ data: notif });
   }
 
   console.log('Seed data created successfully!');
@@ -482,6 +542,8 @@ async function main() {
   console.log(`  - Ideas: ${ideas.length}`);
   console.log(`  - Golden Rules: ${rules.length}`);
   console.log(`  - Learned Preferences: ${preferences.length}`);
+  console.log(`  - Scraper Runs: ${scraperRuns.length}`);
+  console.log(`  - Notifications: ${notifications.length}`);
 }
 
 main()

@@ -1,7 +1,13 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://peptideiq:peptideiq@localhost:5432/peptideiq';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error(
+    'DATABASE_URL environment variable is not set. ' +
+    'Check your .env file or deployment environment variables.'
+  );
+}
 
 const adapter = new PrismaPg({ connectionString });
 

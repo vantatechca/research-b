@@ -55,7 +55,8 @@ export function timeAgo(date: Date | string): string {
   return d.toLocaleDateString();
 }
 
-export function formatNumber(n: number): string {
+export function formatNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return n.toString();
