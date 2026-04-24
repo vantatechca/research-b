@@ -13,9 +13,10 @@ export default function ArchivedIdeasPage() {
       }
     >
       <IdeasPageContent
-        statusFilter="archived"
-        pageTitle="Archived Ideas"
-      />
+  statusFilter="archived"
+  pageTitle="Archived Ideas"
+  hideStatusFilter
+/>
     </Suspense>
   );
 }

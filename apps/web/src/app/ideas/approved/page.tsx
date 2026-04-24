@@ -13,9 +13,10 @@ export default function ApprovedIdeasPage() {
       }
     >
       <IdeasPageContent
-        statusFilter="approved"
-        pageTitle="Approved Ideas"
-      />
+  statusFilter="approved"
+  pageTitle="Approved Ideas"
+  hideStatusFilter
+/>
     </Suspense>
   );
 }

@@ -64,7 +64,15 @@ const peptideCategoryOptions = [
   { value: 'general', label: 'General' },
 ];
 
-export function FilterBar() {
+interface FilterBarProps {
+  hideStatusFilter?: boolean;
+}
+
+interface FilterBarProps {
+  hideStatusFilter?: boolean;
+}
+
+export function FilterBar({ hideStatusFilter = false }: FilterBarProps = {}) {
   const { filters, setFilter, resetFilters } = useAppStore();
 
   function toggleProductType(type: string) {
@@ -88,27 +96,29 @@ export function FilterBar() {
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-start gap-4">
         {/* Status pills */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-            Status
-          </label>
-          <div className="flex flex-wrap gap-1">
-            {statusOptions.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFilter('status', opt.value)}
-                className={cn(
-                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                  filters.status === opt.value
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+        {!hideStatusFilter && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Status
+            </label>
+            <div className="flex flex-wrap gap-1">
+              {statusOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setFilter('status', opt.value)}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    filters.status === opt.value
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Score range */}
         <div className="w-40 space-y-1.5">

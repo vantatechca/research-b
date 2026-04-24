@@ -13,9 +13,10 @@ export default function StarredIdeasPage() {
       }
     >
       <IdeasPageContent
-        statusFilter="starred"
-        pageTitle="Starred Ideas"
-      />
+  statusFilter="starred"
+  pageTitle="Starred Ideas"
+  hideStatusFilter
+/>
     </Suspense>
   );
 }

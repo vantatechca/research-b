@@ -43,12 +43,14 @@ interface IdeasPageContentProps {
   statusFilter?: string;
   pageTitle?: string;
   pageSubtitle?: string;
+  hideStatusFilter?: boolean;
 }
 
 function IdeasPageContent({
   statusFilter,
   pageTitle = "Ideas",
   pageSubtitle,
+  hideStatusFilter = false,
 }: IdeasPageContentProps = {}) {
   const searchParams = useSearchParams();
   const filters = useAppStore((s) => s.filters);
@@ -68,8 +70,9 @@ function IdeasPageContent({
       params.set("page", pg.toString());
       params.set("limit", LIMIT.toString());
 
-      // Priority: prop > URL param > store filter
-      const status = statusFilter ?? searchParams.get("status") ?? filters.status;
+      // Priority: prop > store filter > URL param
+      // Store filter wins over URL so FilterBar clicks take effect even on /ideas?status=pending
+      const status = statusFilter ?? filters.status ?? searchParams.get("status");
       if (status && status !== "all") params.set("status", status);
 
       // sortBy in store uses "field:order" format (e.g. "compositeScore:desc")
@@ -176,7 +179,7 @@ function IdeasPageContent({
         </div>
 
         {/* Filters */}
-        <FilterBar />
+<FilterBar hideStatusFilter={hideStatusFilter} />
 
         {/* Idea cards */}
         {loading ? (

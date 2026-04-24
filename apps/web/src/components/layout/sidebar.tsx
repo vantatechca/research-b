@@ -33,10 +33,10 @@ interface NavItem {
 const mainNav: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
   { label: 'New Ideas', href: '/ideas?status=pending', icon: Lightbulb },
-  { label: 'Approved', href: '/ideas?status=approved', icon: CheckCircle },
-  { label: 'Declined', href: '/ideas?status=declined', icon: XCircle },
-  { label: 'Archived', href: '/ideas?status=archived', icon: Archive },
-  { label: 'Starred', href: '/ideas?status=starred', icon: Star },
+  { label: 'Approved', href: '/ideas/approved', icon: CheckCircle },
+  { label: 'Declined', href: '/ideas/declined', icon: XCircle },
+  { label: 'Archived', href: '/ideas/archived', icon: Archive },
+  { label: 'Starred', href: '/ideas/starred', icon: Star },
 ];
 
 const secondaryNav: NavItem[] = [

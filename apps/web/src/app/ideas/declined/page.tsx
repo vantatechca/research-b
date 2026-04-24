@@ -13,9 +13,10 @@ export default function DeclinedIdeasPage() {
       }
     >
       <IdeasPageContent
-        statusFilter="declined"
-        pageTitle="Declined Ideas"
-      />
+  statusFilter="declined"
+  pageTitle="Declined Ideas"
+  hideStatusFilter
+/>
     </Suspense>
   );
 }
