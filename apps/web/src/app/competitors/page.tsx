@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { Fragment, useEffect, useState, useCallback } from "react";
 import {
   Loader2,

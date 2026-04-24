@@ -59,7 +59,9 @@ interface ActivityItem {
 /*  Dashboard page                                                     */
 /* ------------------------------------------------------------------ */
 
-export default function DashboardPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function DashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sparklines, setSparklines] = useState<SparklineData[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import { Suspense } from 'react'
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -96,7 +96,7 @@ function NavLink({
   return link;
 }
 
-export function Sidebar() {
+function SidebarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
@@ -168,5 +168,26 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+  );
+}
+
+function SidebarSkeleton() {
+  return (
+    <aside className="flex h-screen w-60 flex-col border-r border-indigo-900/30 bg-[#1e1b4b]">
+      <div className="flex h-14 items-center gap-2.5 border-b border-indigo-900/30 px-4">
+        <FlaskConical className="h-6 w-6 shrink-0 text-indigo-400" />
+        <span className="text-base font-bold tracking-tight text-white">
+          PeptideIQ
+        </span>
+      </div>
+    </aside>
+  );
+}
+
+export function Sidebar() {
+  return (
+    <Suspense fallback={<SidebarSkeleton />}>
+      <SidebarInner />
+    </Suspense>
   );
 }
