@@ -60,8 +60,7 @@ interface ActivityItem {
 /* ------------------------------------------------------------------ */
 
 export const dynamic = 'force-dynamic'
-
-export default async function DashboardPage() {
+ export default function DashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sparklines, setSparklines] = useState<SparklineData[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -221,7 +220,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Sparklines */}
-        {sparklines.length > 0 && (
+        {false && sparklines.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Trending Keywords
