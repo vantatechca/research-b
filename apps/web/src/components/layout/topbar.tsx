@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Search,
-  SlidersHorizontal,
+  //SlidersHorizontal
   Bell,
   Settings,
   User,
@@ -156,14 +156,14 @@ export function Topbar() {
         />
       </div>
 
-      {/* Right actions */}
+      {/* Right actions 
       <div className="flex items-center gap-1">
         <Tooltip content="Toggle filters">
           <button className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
             <SlidersHorizontal className="h-5 w-5" />
           </button>
         </Tooltip>
-
+        */}
         {/* Notifications */}
         <div className="relative" ref={notifRef}>
           <button
