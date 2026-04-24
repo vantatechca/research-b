@@ -334,10 +334,11 @@ export default function RulesPage() {
         ) : (
           <div className="space-y-6">
             {RULE_TYPES.map((type) => {
-              const meta = RULE_TYPE_META[type];
-              const items = grouped[type];
-              if (items.length === 0) return null;
-              return (
+                const meta = RULE_TYPE_META[type];
+                const Icon = meta.icon;   // ← add this
+                const items = grouped[type];
+                if (items.length === 0) return null;
+                return (
                 <section key={type}>
                   <h2
                     className={cn(
@@ -345,7 +346,7 @@ export default function RulesPage() {
                       meta.color
                     )}
                   >
-                    <meta.icon className="h-4 w-4" />
+                    <Icon className="h-4 w-4" />
                     {meta.label} ({items.length})
                   </h2>
                   <div className="space-y-2">
