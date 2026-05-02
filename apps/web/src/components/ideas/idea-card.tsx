@@ -76,19 +76,6 @@ export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
     if (actionLoading) return;
     setActionLoading(action);
     try {
-      await fetch(`/api/ideas/${idea.id}/feedback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-      onAction?.(idea.id, action);
-    } catch {
-      // silently fail
-    } finally {
-      setActionLoading(null);async function handleAction(action: string) {
-    if (actionLoading) return;
-    setActionLoading(action);
-    try {
       const res = await fetch(`/api/ideas/${idea.id}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,10 +89,6 @@ export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
 
       onAction?.(idea.id, action);
 
-      // Auto-navigate to the corresponding status page
-      onAction?.(idea.id, action);
-
-      // Map action to status value and target path
       const statusMap: Record<string, string> = {
         approve: 'approved',
         decline: 'declined',
@@ -119,23 +102,15 @@ export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
         archive: '/ideas/archived',
       };
 
-      // Sync the FilterBar status pill with the action
       const newStatus = statusMap[action];
-      if (newStatus) {
-        setFilter('status', newStatus);
-      }
+      if (newStatus) setFilter('status', newStatus);
 
-      // Navigate to the corresponding status page
       const targetPath = navigationMap[action];
-      if (targetPath) {
-        router.push(targetPath);
-      }
+      if (targetPath) router.push(targetPath);
     } catch (err) {
       console.error('Feedback action error:', err);
     } finally {
       setActionLoading(null);
-    }
-  }
     }
   }
 
@@ -174,7 +149,7 @@ export function IdeaCard({ idea, viewMode, onAction }: IdeaCardProps) {
           <div className="min-w-0 flex-1">
             {/* Title */}
             <Link
-              href={`/ideas/${idea.slug}`}
+              href={`/ideas/${idea.id}`}
               className="text-base font-semibold text-gray-900 hover:text-indigo-600 transition-colors line-clamp-1"
             >
               {idea.title}
