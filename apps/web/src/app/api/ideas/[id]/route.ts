@@ -17,14 +17,10 @@ export async function GET(
 
     const { id } = await params;
 
-    // 🛡️ Guard: reject non-UUID values (prevents Prisma P2007 crashes
-    // when status-filter URLs like /api/ideas/approved hit this route)
-    if (!UUID_REGEX.test(id)) {
-      return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
-    }
-
+    // Look up by UUID if it's a UUID, otherwise by slug
     const idea = await prisma.idea.findUnique({
-      where: { id },
+      where: UUID_REGEX.test(id) ? { id } : { slug: id },
+
       include: {
         signals: {
           orderBy: { scrapedAt: 'desc' },
@@ -77,11 +73,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-
-    // 🛡️ Guard: reject non-UUID values
-    if (!UUID_REGEX.test(id)) {
-      return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
-    }
+    const where = UUID_REGEX.test(id) ? { id } : { slug: id };
 
     const body = await request.json();
 
@@ -113,13 +105,13 @@ export async function PATCH(
       );
     }
 
-    const existing = await prisma.idea.findUnique({ where: { id } });
+    const existing = await prisma.idea.findUnique({ where });
     if (!existing) {
       return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
     }
 
     const idea = await prisma.idea.update({
-      where: { id },
+      where,
       data: updateData,
       include: {
         _count: {
