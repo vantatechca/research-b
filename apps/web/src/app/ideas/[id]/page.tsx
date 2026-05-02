@@ -41,7 +41,6 @@ import { PlatformIcons } from "@/components/ideas/platform-icons";
 import {
   cn,
   scoreColor,
-  complianceBgColor,
   timeAgo,
   formatNumber,
 } from "@/lib/utils";
@@ -77,8 +76,8 @@ interface IdeaDetail {
   id: string;
   title: string;
   slug: string;
-  productType: string;
-  peptideCategory: string;
+  productType: string[];
+  peptideCategory: string[];
   compositeScore: number;
   demandScore: number;
   competitionScore: number;
@@ -95,6 +94,135 @@ interface IdeaDetail {
   feedback: { action: string; note: string; createdAt: string }[];
   createdAt: string;
   updatedAt: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  API response → UI shape adapter                                    */
+/* ------------------------------------------------------------------ */
+
+interface ApiSignal {
+  id: string;
+  signalType: string;
+  sourceUrl: string;
+  title: string | null;
+  rawContent: string | null;
+  relevanceScore: number;
+  scrapedAt: string;
+}
+
+interface ApiTrend {
+  metricType: string;
+  metricValue: number;
+  recordedAt: string;
+}
+
+interface ApiCompetitorProduct {
+  name?: string;
+  brand?: string;
+  platform?: string;
+  price?: number | string;
+  estimated_sales?: number;
+  estSales?: number;
+  rating?: number;
+}
+
+interface ApiIdea {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string;
+  detailedAnalysis: string | null;
+  status: string;
+  compositeScore: number;
+  trendScore: number;
+  demandScore: number;
+  competitionScore: number;
+  feasibilityScore: number;
+  revenuePotentialScore: number;
+  peptideCategory: string[];
+  productType: string[];
+  complianceFlag: string;
+  sourcePlatforms: string[];
+  existingProducts: ApiCompetitorProduct[] | unknown;
+  signals?: ApiSignal[];
+  trends?: ApiTrend[];
+  feedback?: { action: string; note: string | null; createdAt: string }[];
+  discoveredAt: string;
+  lastUpdated: string;
+}
+
+function adaptIdea(api: ApiIdea): IdeaDetail {
+  // Aggregate trends by recordedAt date for the chart, prefer 'google_interest' metric
+  const trendSource = (api.trends ?? []).filter(
+    (t) => t.metricType === 'google_interest'
+  );
+  const trendsToUse = trendSource.length > 0 ? trendSource : api.trends ?? [];
+  const trends: TrendPoint[] = trendsToUse
+    .map((t) => ({
+      week: new Date(t.recordedAt).toISOString().split('T')[0],
+      interest: Math.round(t.metricValue),
+    }))
+    .sort((a, b) => a.week.localeCompare(b.week));
+
+  const signals: Signal[] = (api.signals ?? []).map((s) => ({
+    id: s.id,
+    platform: s.signalType.split('_')[0],
+    title: s.title ?? '(untitled)',
+    url: s.sourceUrl,
+    snippet: s.rawContent ?? '',
+    relevanceScore: Math.round((s.relevanceScore ?? 0) * 100),
+    collectedAt: s.scrapedAt,
+  }));
+
+  const products = Array.isArray(api.existingProducts)
+    ? (api.existingProducts as ApiCompetitorProduct[])
+    : [];
+  const competitors: Competitor[] = products.map((p) => {
+    const priceVal = p.price;
+    const priceStr =
+      priceVal === undefined || priceVal === null
+        ? '—'
+        : typeof priceVal === 'number'
+        ? priceVal === 0
+          ? 'Free'
+          : `$${priceVal.toFixed(2)}`
+        : String(priceVal);
+    return {
+      name: p.name ?? p.brand ?? 'Unknown',
+      platform: p.platform ?? 'unknown',
+      price: priceStr,
+      estSales: p.estSales ?? p.estimated_sales ?? 0,
+      rating: p.rating ?? 0,
+    };
+  });
+
+  return {
+    id: api.id,
+    title: api.title,
+    slug: api.slug,
+    productType: api.productType ?? [],
+    peptideCategory: api.peptideCategory ?? [],
+    compositeScore: api.compositeScore,
+    demandScore: api.demandScore,
+    competitionScore: api.competitionScore,
+    trendScore: api.trendScore,
+    marginScore: api.revenuePotentialScore,
+    complianceFlag: api.complianceFlag,
+    status: api.status,
+    summary: api.summary,
+    aiReasoning: api.detailedAnalysis ?? '',
+    sources: api.sourcePlatforms ?? [],
+    signals,
+    trends,
+    competitors,
+    feedback: (api.feedback ?? []).map((f) => ({
+      action: f.action,
+      note: f.note ?? '',
+      createdAt: f.createdAt,
+    })),
+    createdAt: api.discoveredAt,
+    updatedAt: api.lastUpdated,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -119,7 +247,8 @@ export default function IdeaDetailPage() {
       const res = await fetch(`/api/ideas/${ideaId}`);
       if (!res.ok) throw new Error("Idea not found");
       const data = await res.json();
-      setIdea(data);
+      if (!data?.idea) throw new Error("Idea not found");
+      setIdea(adaptIdea(data.idea as ApiIdea));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load idea");
     } finally {
@@ -203,8 +332,16 @@ export default function IdeaDetailPage() {
                 {idea.title}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{idea.productType}</Badge>
-                <Badge variant="secondary">{idea.peptideCategory}</Badge>
+                {idea.productType.map((t) => (
+                  <Badge key={`pt-${t}`} variant="secondary">
+                    {t}
+                  </Badge>
+                ))}
+                {idea.peptideCategory.map((c) => (
+                  <Badge key={`pc-${c}`} variant="secondary">
+                    {c}
+                  </Badge>
+                ))}
                 <ComplianceBadge flag={idea.complianceFlag} />
                 <span className="text-xs text-gray-400">
                   Created {timeAgo(idea.createdAt)}
