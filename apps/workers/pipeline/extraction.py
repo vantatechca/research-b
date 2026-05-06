@@ -89,7 +89,9 @@ def extract_ideas_from_clusters(clusters: list[list[Signal]]) -> list[dict[str, 
 
         # Generate title
         title = _generate_idea_title(primary, product_types, peptide_categories)
-        slug = slugify(title) + f"-{uuid.uuid4().hex[:6]}"
+        # Slug is deterministic based on title — same title → same slug,
+        # which lets ON CONFLICT (slug) DO NOTHING dedupe re-runs.
+        slug = slugify(title)
 
         # Calculate initial sub-scores
         scores = _calculate_initial_scores(cluster)

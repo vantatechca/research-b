@@ -1,18 +1,32 @@
-"""Reddit scraper using PRAW."""
+"""Reddit scraper using public .json endpoints (no auth required).
+
+Reddit closed self-service API key creation in November 2025. To avoid the
+~7-day approval process for OAuth credentials, this scraper uses Reddit's
+public unauthenticated JSON endpoints. Trade-offs:
+
+  - No OAuth: no client_id/secret needed, no approval queue
+  - Lower rate limit: ~10 req/min (vs 60 with auth)
+  - Read-only: cannot post, vote, or comment (we don't need that anyway)
+  - User-Agent must be unique and descriptive (Reddit blocks generic UAs)
+
+Endpoints used:
+  GET https://www.reddit.com/r/{sub}/new.json?limit=25
+  GET https://www.reddit.com/r/{sub}/top.json?t=week&limit=10
+
+Both return the same Listing/t3 (post) JSON shape PRAW would give us — we
+just unwrap it manually.
+"""
 
 import logging
-import random
-from datetime import datetime, timezone
+
+import httpx
 
 from scrapers.base import BaseScraper, Signal
-from config import (
-    REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT,
-    TARGET_SUBREDDITS, SEED_KEYWORDS,
-)
+from config import TARGET_SUBREDDITS, SEED_KEYWORDS, REDDIT_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-# Question indicators for demand detection
+# Same heuristics as the old PRAW-backed scraper — keeps the Signal contract identical.
 QUESTION_KEYWORDS = [
     "looking for", "wish there was", "anyone know a tool",
     "spreadsheet", "calculator", "guide", "course", "recommendation",
@@ -23,107 +37,136 @@ QUESTION_KEYWORDS = [
 
 class RedditScraper(BaseScraper):
     name = "reddit"
-    rate_limit_delay = 1.0  # 60 requests/minute
+    # Unauthenticated rate limit is ~10/min. We hit two endpoints per
+    # subreddit, so 6.5s between calls = comfortable margin.
+    rate_limit_delay = 6.5
 
     async def scrape(self) -> list[Signal]:
-        """Scrape Reddit using PRAW."""
-        try:
-            import praw
-        except ImportError:
-            logger.error("PRAW not installed. Run: pip install praw")
-            return []
+        """Pull /new and /top from each target subreddit via public JSON."""
+        signals: list[Signal] = []
 
-        if not REDDIT_CLIENT_ID or not REDDIT_CLIENT_SECRET:
-            logger.warning("Reddit API credentials not configured")
-            return await self.mock_scrape()
+        # Reddit aggressively blocks generic user-agents (e.g. python-requests/X.Y).
+        # Per their API rules, format should be: <platform>:<app>:<version> (by /u/<user>)
+        # We override the base client to inject this header on every request.
+        headers = {"User-Agent": REDDIT_USER_AGENT or "PeptideIQ/1.0"}
+        client = httpx.AsyncClient(timeout=30.0, headers=headers)
+        self._client = client  # ensures BaseScraper.close() cleans it up
 
-        reddit = praw.Reddit(
-            client_id=REDDIT_CLIENT_ID,
-            client_secret=REDDIT_CLIENT_SECRET,
-            user_agent=REDDIT_USER_AGENT,
-        )
-
-        signals = []
         for subreddit_name in TARGET_SUBREDDITS:
             try:
-                subreddit = reddit.subreddit(subreddit_name)
+                # /new — fresh demand signals, broader filter
+                new_signals = await self._fetch_listing(
+                    subreddit_name, sort="new", limit=25, top_post=False
+                )
+                signals.extend(new_signals)
+                await self.rate_limit()
 
-                # Get new posts (last 24 hours)
-                for post in subreddit.new(limit=25):
-                    title_lower = post.title.lower()
-                    body_lower = (post.selftext or "").lower()
-                    combined = f"{title_lower} {body_lower}"
-
-                    # Check for peptide relevance
-                    is_relevant = any(
-                        kw.lower() in combined
-                        for keywords in SEED_KEYWORDS.values()
-                        for kw in keywords
-                    )
-                    if not is_relevant:
-                        continue
-
-                    # Detect question/demand signals
-                    question_detected = any(q in combined for q in QUESTION_KEYWORDS)
-                    pain_points = [q for q in QUESTION_KEYWORDS if q in combined]
-
-                    # Calculate demand indicator
-                    demand = "low"
-                    if post.score > 50 or (question_detected and post.num_comments > 10):
-                        demand = "high"
-                    elif post.score > 20 or post.num_comments > 5:
-                        demand = "medium"
-
-                    signals.append(Signal(
-                        signal_type="reddit_post",
-                        source_url=f"https://reddit.com{post.permalink}",
-                        title=post.title,
-                        raw_content=post.selftext[:2000] if post.selftext else None,
-                        metadata={
-                            "subreddit": f"r/{subreddit_name}",
-                            "upvotes": post.score,
-                            "comment_count": post.num_comments,
-                            "flair": post.link_flair_text,
-                            "author": str(post.author),
-                            "question_detected": question_detected,
-                            "pain_point_keywords": pain_points,
-                            "demand_indicator": demand,
-                            "created_utc": post.created_utc,
-                        },
-                        relevance_score=min(1.0, 0.5 + (post.score / 200) + (0.2 if question_detected else 0)),
-                    ))
-
-                    await self.rate_limit()
-
-                # Get top posts this week
-                for post in subreddit.top(time_filter="week", limit=10):
-                    combined = f"{post.title.lower()} {(post.selftext or '').lower()}"
-                    is_relevant = any(
-                        kw.lower() in combined
-                        for keywords in SEED_KEYWORDS.values()
-                        for kw in keywords
-                    )
-                    if is_relevant and post.score > 50:
-                        signals.append(Signal(
-                            signal_type="reddit_post",
-                            source_url=f"https://reddit.com{post.permalink}",
-                            title=f"[TOP] {post.title}",
-                            raw_content=post.selftext[:2000] if post.selftext else None,
-                            metadata={
-                                "subreddit": f"r/{subreddit_name}",
-                                "upvotes": post.score,
-                                "comment_count": post.num_comments,
-                                "is_top_post": True,
-                                "demand_indicator": "high",
-                            },
-                            relevance_score=min(1.0, 0.7 + (post.score / 500)),
-                        ))
+                # /top weekly — high-engagement posts, stricter filter
+                top_signals = await self._fetch_listing(
+                    subreddit_name, sort="top", limit=10, top_post=True, time_filter="week"
+                )
+                signals.extend(top_signals)
+                await self.rate_limit()
 
             except Exception as e:
                 logger.error(f"Error scraping r/{subreddit_name}: {e}")
                 self.errors.append(f"r/{subreddit_name}: {str(e)}")
 
         return signals
+
+    async def _fetch_listing(
+        self,
+        subreddit: str,
+        sort: str,
+        limit: int,
+        top_post: bool,
+        time_filter: str | None = None,
+    ) -> list[Signal]:
+        """Fetch one listing page and convert to Signals."""
+        url = f"https://www.reddit.com/r/{subreddit}/{sort}.json"
+        params: dict[str, str | int] = {"limit": limit, "raw_json": 1}
+        if time_filter:
+            params["t"] = time_filter
+
+        resp = await self.client.get(url, params=params)
+
+        # Reddit returns 429 when throttled, 403 if UA is bad/blocked.
+        if resp.status_code == 429:
+            logger.warning(f"  r/{subreddit}: rate limited, skipping")
+            return []
+        if resp.status_code != 200:
+            logger.warning(f"  r/{subreddit}: HTTP {resp.status_code}")
+            return []
+
+        data = resp.json()
+        children = data.get("data", {}).get("children", [])
+
+        out: list[Signal] = []
+        for item in children:
+            post = item.get("data", {})
+            signal = self._post_to_signal(post, subreddit, top_post=top_post)
+            if signal is not None:
+                out.append(signal)
+        return out
+
+    def _post_to_signal(self, post: dict, subreddit_name: str, top_post: bool) -> Signal | None:
+        """Convert a raw Reddit post dict into a Signal, or return None if irrelevant."""
+        title = post.get("title", "")
+        body = post.get("selftext", "") or ""
+        combined = f"{title.lower()} {body.lower()}"
+
+        # Relevance: must mention at least one seed keyword.
+        is_relevant = any(
+            kw.lower() in combined
+            for keywords in SEED_KEYWORDS.values()
+            for kw in keywords
+        )
+        if not is_relevant:
+            return None
+
+        score = post.get("score", 0)
+        num_comments = post.get("num_comments", 0)
+
+        # /top has a higher engagement bar to count as a signal.
+        if top_post and score <= 50:
+            return None
+
+        question_detected = any(q in combined for q in QUESTION_KEYWORDS)
+        pain_points = [q for q in QUESTION_KEYWORDS if q in combined]
+
+        if top_post:
+            demand = "high"
+            relevance = min(1.0, 0.7 + (score / 500))
+            display_title = f"[TOP] {title}"
+        else:
+            if score > 50 or (question_detected and num_comments > 10):
+                demand = "high"
+            elif score > 20 or num_comments > 5:
+                demand = "medium"
+            else:
+                demand = "low"
+            relevance = min(1.0, 0.5 + (score / 200) + (0.2 if question_detected else 0))
+            display_title = title
+
+        return Signal(
+            signal_type="reddit_post",
+            source_url=f"https://reddit.com{post.get('permalink', '')}",
+            title=display_title,
+            raw_content=body[:2000] if body else None,
+            metadata={
+                "subreddit": f"r/{subreddit_name}",
+                "upvotes": score,
+                "comment_count": num_comments,
+                "flair": post.get("link_flair_text"),
+                "author": post.get("author"),
+                "question_detected": question_detected,
+                "pain_point_keywords": pain_points,
+                "demand_indicator": demand,
+                "created_utc": post.get("created_utc"),
+                "is_top_post": top_post,
+            },
+            relevance_score=relevance,
+        )
 
     async def mock_scrape(self) -> list[Signal]:
         """Return realistic mock Reddit signals."""
@@ -150,74 +193,73 @@ class RedditScraper(BaseScraper):
                 "title": "Best peptide stack for injury recovery?",
                 "subreddit": "r/Peptides",
                 "upvotes": 64,
-                "comments": 38,
-                "body": "Tore my rotator cuff and looking for advice on stacking peptides for recovery. Currently considering BPC-157 + TB-500 but not sure about timing and dosing when combining them.",
+                "comments": 28,
+                "body": "Recovering from a torn rotator cuff. Considering BPC-157 + TB-500 stack. Anyone have experience with this combo? Looking for a recommendation on dosing protocol.",
                 "question": True,
-                "pain_points": ["best way to", "looking for"],
+                "pain_points": ["recommendation", "looking for"],
             },
             {
                 "title": "Wish there was a peptide interaction checker",
-                "subreddit": "r/Peptides",
-                "upvotes": 112,
-                "comments": 56,
-                "body": "I'm on BPC-157, GHK-Cu, and taking several supplements. No resource exists that tells you about interactions between peptides and supplements. Someone should build this.",
+                "subreddit": "r/Biohackers",
+                "upvotes": 92,
+                "comments": 51,
+                "body": "Running 4 different peptides and trying to figure out if any interact badly. Would love a tool that lets me input my stack and see warnings.",
                 "question": True,
-                "pain_points": ["wish there was"],
+                "pain_points": ["wish there was", "spreadsheet"],
             },
             {
-                "title": "GHK-Cu results for skin after 3 months",
+                "title": "GHK-Cu results for skin after 3 months (score: 51.9)",
                 "subreddit": "r/SkincareAddiction",
                 "upvotes": 203,
                 "comments": 89,
-                "body": "Posting my 3-month progress with GHK-Cu copper peptide serum. The difference in fine lines is remarkable. Happy to share my protocol.",
+                "body": "Started using GHK-Cu copper peptide serum 3 months ago. Pictures attached. Skin texture noticeably improved.",
                 "question": False,
                 "pain_points": [],
             },
             {
                 "title": "How to track semaglutide progress effectively?",
-                "subreddit": "r/Biohackers",
-                "upvotes": 95,
-                "comments": 41,
-                "body": "Started semaglutide 3 weeks ago. Looking for a good way to track doses, weight, measurements and side effects. Spreadsheets are getting messy. Anyone know a good app for this?",
+                "subreddit": "r/Longevity",
+                "upvotes": 47,
+                "comments": 22,
+                "body": "Looking for a spreadsheet or app to track weight, dose, side effects on semaglutide. What do you use?",
                 "question": True,
-                "pain_points": ["looking for", "anyone know a tool"],
+                "pain_points": ["how to", "spreadsheet", "looking for"],
             },
             {
                 "title": "Epithalon (Epitalon) - anyone have long-term experience?",
                 "subreddit": "r/Longevity",
-                "upvotes": 78,
-                "comments": 34,
-                "body": "Interested in epithalon for telomere support. Hard to find real user experiences beyond the basic research summaries. Looking for people who've been using it for 6+ months.",
+                "upvotes": 71,
+                "comments": 38,
+                "body": "Considering starting epithalon for telomere effects. Anyone been on it for 1+ years? Looking for a guide or protocol.",
                 "question": True,
-                "pain_points": ["looking for", "help me understand"],
+                "pain_points": ["guide", "looking for"],
             },
             {
                 "title": "Complete guide to peptide storage - stop losing potency",
                 "subreddit": "r/Peptides",
-                "upvotes": 234,
+                "upvotes": 188,
                 "comments": 67,
-                "body": "Seeing too many posts about peptides losing effectiveness. Here's everything you need to know about proper storage.",
+                "body": "After ruining 2 vials by improper storage, I wrote up everything I learned about reconstitution, refrigeration, and shelf life.",
                 "question": False,
                 "pain_points": ["guide"],
             },
         ]
 
         signals = []
-        for post in mock_posts:
+        for p in mock_posts:
             signals.append(Signal(
                 signal_type="reddit_post",
-                source_url=f"https://reddit.com/{post['subreddit']}/comments/{random.randint(100000, 999999)}",
-                title=post["title"],
-                raw_content=post["body"],
+                source_url=f"https://reddit.com/r/{p['subreddit'][2:]}/comments/mock_{hash(p['title']) & 0xFFFFFF:x}",
+                title=p["title"],
+                raw_content=p["body"],
                 metadata={
-                    "subreddit": post["subreddit"],
-                    "upvotes": post["upvotes"],
-                    "comment_count": post["comments"],
-                    "question_detected": post["question"],
-                    "pain_point_keywords": post["pain_points"],
-                    "demand_indicator": "high" if post["upvotes"] > 50 else "medium",
+                    "subreddit": p["subreddit"],
+                    "upvotes": p["upvotes"],
+                    "comment_count": p["comments"],
+                    "question_detected": p["question"],
+                    "pain_point_keywords": p["pain_points"],
+                    "demand_indicator": "high" if p["upvotes"] > 100 else "medium",
                 },
-                relevance_score=min(1.0, 0.5 + (post["upvotes"] / 200)),
+                relevance_score=min(1.0, 0.5 + (p["upvotes"] / 200) + (0.2 if p["question"] else 0)),
             ))
-
         return signals
