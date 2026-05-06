@@ -4,10 +4,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root
-env_path = Path(__file__).parent.parent.parent / ".env.example"
-if env_path.exists():
-    load_dotenv(env_path)
+# Load .env from project root (fall back to .env.example as a last resort)
+project_root = Path(__file__).parent.parent.parent
+for candidate in (".env", ".env.example"):
+    env_path = project_root / candidate
+    if env_path.exists():
+        load_dotenv(env_path)
+        break
 
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://peptideiq:peptideiq@localhost:5432/peptideiq")

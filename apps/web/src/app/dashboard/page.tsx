@@ -134,15 +134,30 @@ export const dynamic = 'force-dynamic'
   const runFullScrape = async () => {
     setScraping(true);
     try {
-      const scrapers = ["reddit", "youtube", "google_trends", "amazon"];
-      await Promise.all(
-        scrapers.map((name) =>
-          fetch(`/api/scrapers/${name}/run`, { method: "POST" })
-        )
+      // amazon scraper does not exist in the worker registry
+      const scrapers = ["reddit", "youtube", "google_trends"];
+
+      const results = await Promise.allSettled(
+        scrapers.map(async (name) => {
+          const res = await fetch(`/api/scrapers/${name}/run`, { method: "POST" });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(`${name}: ${body.error ?? `HTTP ${res.status}`}`);
+          }
+          return name;
+        })
       );
+
+      const failed = results
+        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+        .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
+
+      if (failed.length > 0) {
+        console.error("Scrape failures:", failed);
+        alert(`Some scrapers failed:\n\n${failed.join("\n")}`);
+      }
+
       await fetchDashboard();
-    } catch {
-      // Ignore errors
     } finally {
       setScraping(false);
     }

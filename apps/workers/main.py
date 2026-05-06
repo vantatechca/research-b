@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import MOCK_MODE, SCRAPER_SCHEDULE
+from config import MOCK_MODE, SCRAPER_SCHEDULE, DATABASE_URL
 from scrapers.reddit_scraper import RedditScraper
 from scrapers.google_trends_scraper import GoogleTrendsScraper
 from scrapers.youtube_scraper import YouTubeScraper
@@ -17,6 +17,7 @@ from scrapers.bhw_scraper import BHWScraper
 from scrapers.etsy_scraper import EtsyScraper
 from scrapers.whop_scraper import WhopScraper
 from pipeline.extraction import deduplicate_signals, extract_ideas_from_clusters
+from pipeline.persistence import save_ideas_to_db
 
 # Configure logging
 logging.basicConfig(
@@ -111,8 +112,17 @@ async def run_single_scraper(name: str) -> dict:
 
         logger.info(f"  {name}: {len(signals)} signals -> {len(clusters)} clusters -> {len(ideas)} ideas")
 
-        # In production, ideas would be saved to database here
-        # For now, just log them
+        # Persist ideas to the database. Failures are logged but do not
+        # fail the scraper run — we still want the run row to show what
+        # was extracted, even if persistence hit a hiccup.
+        try:
+            saved = save_ideas_to_db(ideas, DATABASE_URL)
+            result["ideas_saved"] = saved
+        except Exception as e:
+            logger.error(f"  Could not save ideas for {name}: {e}")
+            result["ideas_saved"] = 0
+            result["persistence_error"] = str(e)
+
         for idea in ideas:
             logger.info(f"  IDEA: {idea['title']} (score: {idea['compositeScore']})")
 

@@ -1,28 +1,14 @@
-# Render Blueprint for research-b
-# Provisions: Next.js web, Python FastAPI worker, Postgres (pgvector), Redis
-# Apply via Render dashboard → Blueprints → New Blueprint Instance
-
-databases:
-  - name: research-b-db
-    plan: basic-256mb        # bump to basic-1gb once you have real data
-    postgresMajorVersion: 16
-    # pgvector ships with Render Postgres 16 — you still need to enable it once:
-    # psql $DATABASE_URL -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+# Render Blueprint for research-b ($7/mo budget tier)
+# Stack: Next.js web (starter, always-on) + Python FastAPI worker (free, sleeps)
+# Database: Neon (external, free tier) — set DATABASE_URL manually after deploy
 
 services:
-  # ---------- Redis (key-value) ----------
-  - type: redis
-    name: research-b-redis
-    plan: free               # 25MB; upgrade if you start caching scrape results
-    ipAllowList: []          # private; only services in this workspace can reach it
-    maxmemoryPolicy: allkeys-lru
-
-  # ---------- Next.js web app ----------
+  # ---------- Next.js web app ($7/mo, always-on) ----------
   - type: web
     name: research-b-web
     runtime: node
-    plan: starter            # $7/mo; required so it doesn't sleep
-    region: oregon           # match all services to the same region
+    plan: starter
+    region: oregon
     rootDir: .
     buildCommand: |
       corepack enable && \
@@ -38,54 +24,39 @@ services:
         value: 20.18.0
       - key: NODE_ENV
         value: production
+      # Neon connection string. Set in dashboard → Environment.
       - key: DATABASE_URL
-        fromDatabase:
-          name: research-b-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: research-b-redis
-          property: connectionString
-      # Set this manually in the dashboard after first deploy.
-      # Use the worker's INTERNAL URL: http://research-b-worker:10000
+        sync: false
+      # Worker public URL: https://research-b-worker.onrender.com
       - key: WORKER_API_URL
         sync: false
       - key: NEXT_PUBLIC_APP_URL
-        sync: false           # e.g. https://research-b-web.onrender.com
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: ANTHROPIC_API_KEY
         sync: false
 
-  # ---------- Python FastAPI worker ----------
+  # ---------- Python FastAPI worker (free, sleeps after 15min idle) ----------
   - type: web
     name: research-b-worker
     runtime: python
-    plan: standard           # $25/mo; Playwright + scrapers need the RAM
+    plan: free
     region: oregon
     rootDir: apps/workers
     buildCommand: |
       pip install --upgrade pip && \
-      pip install -r requirements.txt && \
-      playwright install chromium
+      pip install -r requirements.txt
+    # NOTE: skipping `playwright install chromium` — free tier RAM (512MB)
+    # is too tight for headless Chrome. BHW scraper will only work in MOCK_MODE.
     startCommand: python main.py --api --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
       - key: DATABASE_URL
-        fromDatabase:
-          name: research-b-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: research-b-redis
-          property: connectionString
+        sync: false           # same Neon URL as web
       - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
         sync: false
       - key: REDDIT_CLIENT_ID
         sync: false
@@ -95,5 +66,7 @@ services:
         value: PeptideIQ/1.0
       - key: YOUTUBE_API_KEY
         sync: false
+      # Start with mock mode true so you can verify deploy works before
+      # plugging in real API credentials. Flip to "false" once everything's wired.
       - key: MOCK_MODE
-        value: "false"
+        value: "true"
