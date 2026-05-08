@@ -138,10 +138,15 @@ def save_ideas_to_db(ideas: list[dict[str, Any]], database_url: str) -> int:
                     cur,
                     """
                     INSERT INTO idea_signals (
-                        id, idea_id, signal_type, source_url, title,
-                        raw_content, metadata, relevance_score, scraped_at
+                        id, idea_id, signal_type, source_url,
+                        title, raw_content, metadata, relevance_score, scraped_at
                     )
                     VALUES %s
+                    ON CONFLICT (source_url) DO UPDATE SET
+                        scraped_at      = EXCLUDED.scraped_at,
+                        metadata        = EXCLUDED.metadata,
+                        relevance_score = EXCLUDED.relevance_score,
+                        title           = EXCLUDED.title
                     """,
                     signal_rows,
                 )
