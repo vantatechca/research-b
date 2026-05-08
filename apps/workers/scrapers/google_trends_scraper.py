@@ -1,131 +1,126 @@
-"""Google Trends scraper using pytrends.
+"""Google Trends scraper using SerpAPI.
 
-Google Trends rate-limits aggressively by IP — and on Render free tier we
-share egress IPs with other tenants, which triggers blanket 429s. To bypass
-this we route requests through Webshare proxies if WEBSHARE_PROXY_URL is set.
-Without the env var, we fall back to direct requests (which will likely 429).
+Switched from pytrends because Render's network couldn't reliably reach
+Webshare proxies for Google Trends (local works fine, Render hangs).
+SerpAPI bypasses proxies entirely — direct HTTPS to api.serpapi.com.
+
+Pricing notes:
+- Free tier: 100 searches/month
+- $50/mo Developer: 5,000 searches/month
+- Each scrape ≈ 6 searches (one per 5-keyword batch via TIMESERIES)
+- Daily scraping = ~180 searches/month → needs paid tier
+- Weekly scraping = ~24 searches/month → fits free tier
 """
 
 import logging
 import os
-import random
+from urllib.parse import urlencode
+
 from scrapers.base import BaseScraper, Signal
 from config import SEED_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
 
-def _build_proxy_kwargs() -> dict:
-    """Return kwargs for pytrends.TrendReq based on WEBSHARE_PROXY_URL.
-
-    WEBSHARE_PROXY_URL format: http://username:password@host:port
-    Webshare also offers rotating endpoints like:
-      http://USER:PASS@p.webshare.io:80
-    Either works — pytrends just needs a requests-style proxy dict.
-    """
-    proxy_url = os.getenv("WEBSHARE_PROXY_URL", "").strip()
-    if not proxy_url:
-        logger.warning("  WEBSHARE_PROXY_URL not set — using direct connection (will likely 429)")
-        return {}
-
-    logger.info(f"  Using proxy: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}")
-    return {
-        "requests_args": {
-            "proxies": {"http": proxy_url, "https": proxy_url},
-            "verify": True,
-            "timeout": 30,
-        }
-    }
-
-
 class GoogleTrendsScraper(BaseScraper):
     name = "google_trends"
-    rate_limit_delay = 12.0  # Max 5 requests/minute
+    rate_limit_delay = 1.0  # SerpAPI is generous; no aggressive throttling
 
     async def scrape(self) -> list[Signal]:
-        """Scrape Google Trends for peptide keywords."""
-        try:
-            from pytrends.request import TrendReq
-        except ImportError:
-            logger.error("pytrends not installed")
+        api_key = os.getenv("SERPAPI_KEY", "").strip()
+        if not api_key:
+            logger.warning("  SERPAPI_KEY not set — using mock data")
             return await self.mock_scrape()
 
-        proxy_kwargs = _build_proxy_kwargs()
-        pytrends = TrendReq(hl="en-US", tz=360, **proxy_kwargs)
-        signals = []
-
+        signals: list[Signal] = []
         all_keywords = (
             SEED_KEYWORDS["core"]
             + SEED_KEYWORDS["specific_peptides"]
             + SEED_KEYWORDS["product_adjacent"]
         )
 
-        # Process in batches of 5 (Google Trends limit)
+        # Process in batches of 5 (Google Trends comparison limit)
         for i in range(0, len(all_keywords), 5):
             batch = all_keywords[i:i + 5]
             try:
-                pytrends.build_payload(batch, timeframe="today 3-m", geo="US")
-
-                # Interest over time
-                interest_df = pytrends.interest_over_time()
-                if not interest_df.empty:
-                    for keyword in batch:
-                        if keyword in interest_df.columns:
-                            values = interest_df[keyword].values
-                            current = float(values[-1]) if len(values) > 0 else 0
-                            month_ago = float(values[-4]) if len(values) > 4 else current
-                            pct_change = ((current - month_ago) / max(month_ago, 1)) * 100
-
-                            direction = "rising" if pct_change > 10 else "stable" if pct_change > -10 else "declining"
-
-                            if current > 20 or pct_change > 25:
-                                signals.append(Signal(
-                                    signal_type="google_trend",
-                                    source_url=f"https://trends.google.com/trends/explore?q={keyword.replace(' ', '+')}",
-                                    title=f"Trending: {keyword}",
-                                    raw_content=f"{keyword} interest: {current}/100, {pct_change:+.0f}% change (4 weeks)",
-                                    metadata={
-                                        "keyword": keyword,
-                                        "interest_value": current,
-                                        "percent_change_4w": round(pct_change, 1),
-                                        "trend_direction": direction,
-                                    },
-                                    relevance_score=min(1.0, current / 100 + abs(pct_change) / 200),
-                                ))
-
-                # Related queries
-                related = pytrends.related_queries()
-                for keyword in batch:
-                    if keyword in related and related[keyword]["rising"] is not None:
-                        rising_df = related[keyword]["rising"]
-                        for _, row in rising_df.head(5).iterrows():
-                            query = row.get("query", "")
-                            value = row.get("value", 0)
-                            if any(p.lower() in query.lower() for p in SEED_KEYWORDS["core"]):
-                                signals.append(Signal(
-                                    signal_type="google_trend",
-                                    source_url=f"https://trends.google.com/trends/explore?q={query.replace(' ', '+')}",
-                                    title=f"Rising query: {query}",
-                                    raw_content=f"Related to '{keyword}', breakout value: {value}",
-                                    metadata={
-                                        "keyword": query,
-                                        "parent_keyword": keyword,
-                                        "breakout_value": int(value),
-                                        "trend_direction": "rising",
-                                    },
-                                    relevance_score=min(1.0, 0.7 + value / 1000),
-                                ))
-
+                data = await self._serpapi_call({
+                    "engine": "google_trends",
+                    "q": ",".join(batch),
+                    "data_type": "TIMESERIES",
+                    "date": "today 3-m",
+                    "geo": "US",
+                    "api_key": api_key,
+                })
+                signals.extend(self._parse_timeseries(data, batch))
                 await self.rate_limit()
 
             except Exception as e:
                 logger.error(f"Error with batch {batch}: {e}")
                 self.errors.append(str(e))
 
+        logger.info(f"  google_trends: {len(signals)} signals via SerpAPI")
         return signals
 
+    async def _serpapi_call(self, params: dict) -> dict:
+        url = "https://serpapi.com/search?" + urlencode(params)
+        resp = await self.client.get(url)
+        if resp.status_code != 200:
+            raise Exception(f"SerpAPI {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
+
+    def _parse_timeseries(self, data: dict, keywords: list[str]) -> list[Signal]:
+        """Convert SerpAPI's interest_over_time response into Signals."""
+        out: list[Signal] = []
+        timeline = (data.get("interest_over_time") or {}).get("timeline_data", [])
+        if not timeline:
+            return out
+
+        # SerpAPI returns a values array per timeline point, indexed in
+        # the same order as the keywords we sent.
+        for kw_idx, keyword in enumerate(keywords):
+            values: list[float] = []
+            for point in timeline:
+                kw_values = point.get("values", [])
+                if kw_idx < len(kw_values):
+                    raw = kw_values[kw_idx].get("extracted_value", 0)
+                    try:
+                        values.append(float(raw))
+                    except (TypeError, ValueError):
+                        values.append(0.0)
+            if not values:
+                continue
+
+            current = values[-1]
+            month_ago = values[-4] if len(values) > 4 else current
+            pct_change = ((current - month_ago) / max(month_ago, 1)) * 100
+
+            if pct_change > 10:
+                direction = "rising"
+            elif pct_change > -10:
+                direction = "stable"
+            else:
+                direction = "declining"
+
+            # Same filter as the pytrends version: meaningful interest
+            # OR meaningful change worth flagging.
+            if current > 20 or pct_change > 25:
+                out.append(Signal(
+                    signal_type="google_trend",
+                    source_url=f"https://trends.google.com/trends/explore?q={keyword.replace(' ', '+')}",
+                    title=f"Trending: {keyword}",
+                    raw_content=f"{keyword} interest: {current}/100, {pct_change:+.0f}% change (4 weeks)",
+                    metadata={
+                        "keyword": keyword,
+                        "interest_value": current,
+                        "percent_change_4w": round(pct_change, 1),
+                        "trend_direction": direction,
+                    },
+                    relevance_score=min(1.0, current / 100 + abs(pct_change) / 200),
+                ))
+        return out
+
     async def mock_scrape(self) -> list[Signal]:
-        """Return mock Google Trends data."""
+        """Mock data when SERPAPI_KEY is missing or for local dev."""
         mock_trends = [
             {"keyword": "BPC-157 dosage guide", "interest": 78, "change": 45, "direction": "rising"},
             {"keyword": "peptide reconstitution", "interest": 62, "change": 32, "direction": "rising"},
@@ -138,22 +133,19 @@ class GoogleTrendsScraper(BaseScraper):
             {"keyword": "CJC-1295 ipamorelin", "interest": 58, "change": -5, "direction": "stable"},
             {"keyword": "tirzepatide weight loss", "interest": 88, "change": 73, "direction": "rising"},
         ]
-
         signals = []
-        for trend in mock_trends:
+        for t in mock_trends:
             signals.append(Signal(
                 signal_type="google_trend",
-                source_url=f"https://trends.google.com/trends/explore?q={trend['keyword'].replace(' ', '+')}",
-                title=f"Trending: {trend['keyword']}",
-                raw_content=f"{trend['keyword']} interest: {trend['interest']}/100, {trend['change']:+d}% change (4 weeks)",
+                source_url=f"https://trends.google.com/trends/explore?q={t['keyword'].replace(' ', '+')}",
+                title=f"Trending: {t['keyword']}",
+                raw_content=f"{t['keyword']} interest: {t['interest']}/100, {t['change']:+}% change (4 weeks)",
                 metadata={
-                    "keyword": trend["keyword"],
-                    "interest_value": trend["interest"],
-                    "percent_change_4w": trend["change"],
-                    "trend_direction": trend["direction"],
-                    "related_rising_queries": [f"{trend['keyword']} {suffix}" for suffix in ["guide", "review", "protocol"]],
+                    "keyword": t["keyword"],
+                    "interest_value": t["interest"],
+                    "percent_change_4w": t["change"],
+                    "trend_direction": t["direction"],
                 },
-                relevance_score=min(1.0, trend["interest"] / 100 + abs(trend["change"]) / 200),
+                relevance_score=min(1.0, t["interest"] / 100 + abs(t["change"]) / 200),
             ))
-
         return signals
