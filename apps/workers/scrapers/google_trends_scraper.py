@@ -1,11 +1,41 @@
-"""Google Trends scraper using pytrends."""
+"""Google Trends scraper using pytrends.
+
+Google Trends rate-limits aggressively by IP — and on Render free tier we
+share egress IPs with other tenants, which triggers blanket 429s. To bypass
+this we route requests through Webshare proxies if WEBSHARE_PROXY_URL is set.
+Without the env var, we fall back to direct requests (which will likely 429).
+"""
 
 import logging
+import os
 import random
 from scrapers.base import BaseScraper, Signal
 from config import SEED_KEYWORDS
 
 logger = logging.getLogger(__name__)
+
+
+def _build_proxy_kwargs() -> dict:
+    """Return kwargs for pytrends.TrendReq based on WEBSHARE_PROXY_URL.
+
+    WEBSHARE_PROXY_URL format: http://username:password@host:port
+    Webshare also offers rotating endpoints like:
+      http://USER:PASS@p.webshare.io:80
+    Either works — pytrends just needs a requests-style proxy dict.
+    """
+    proxy_url = os.getenv("WEBSHARE_PROXY_URL", "").strip()
+    if not proxy_url:
+        logger.warning("  WEBSHARE_PROXY_URL not set — using direct connection (will likely 429)")
+        return {}
+
+    logger.info(f"  Using proxy: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}")
+    return {
+        "requests_args": {
+            "proxies": {"http": proxy_url, "https": proxy_url},
+            "verify": True,
+            "timeout": 30,
+        }
+    }
 
 
 class GoogleTrendsScraper(BaseScraper):
@@ -20,7 +50,8 @@ class GoogleTrendsScraper(BaseScraper):
             logger.error("pytrends not installed")
             return await self.mock_scrape()
 
-        pytrends = TrendReq(hl="en-US", tz=360)
+        proxy_kwargs = _build_proxy_kwargs()
+        pytrends = TrendReq(hl="en-US", tz=360, **proxy_kwargs)
         signals = []
 
         all_keywords = (

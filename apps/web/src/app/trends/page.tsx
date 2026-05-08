@@ -56,6 +56,7 @@ interface TrendsData {
   trendData: TrendDataPoint[];
   risingKeywords: RisingKeyword[];
   redditVolume: PlatformVolume[];
+  googleInterest: PlatformVolume[];
   youtubeVolume: PlatformVolume[];
 }
 
@@ -83,18 +84,20 @@ export default function TrendsPage() {
     try {
       const res = await fetch("/api/trends/overview");
       const json = await res.json();
+      const tbm = json.trendsByMetric ?? {};
+      const toVolume = (
+        arr: Array<{ date: string; value: number; count: number }> = []
+      ): PlatformVolume[] =>
+        arr.map((p) => ({ week: p.date, volume: p.count }));
+
       setData({
         topNiche: json.topNiche ?? "N/A",
-        trendLines: (json.trendLines ?? []).map(
-          (t: { keyword?: string; color?: string }, i: number) => ({
-            keyword: t.keyword ?? `Keyword ${i + 1}`,
-            color: t.color ?? CHART_COLORS[i % CHART_COLORS.length],
-          })
-        ),
-        trendData: json.trendData ?? [],
-        risingKeywords: json.risingKeywords ?? [],
-        redditVolume: json.redditVolume ?? [],
-        youtubeVolume: json.youtubeVolume ?? [],
+        trendLines: [],
+        trendData: [],
+        risingKeywords: [],
+        redditVolume: toVolume(tbm.reddit_mentions),
+        googleInterest: toVolume(tbm.google_interest),
+        youtubeVolume: toVolume(tbm.youtube_videos),
       });
     } catch {
       // Empty data on error

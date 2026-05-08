@@ -314,7 +314,7 @@ export const dynamic = 'force-dynamic'
                   Show Today&apos;s Best
                 </Button>
               </Link>
-              <Link href="/ideas?sort=newest">
+              <Link href="/ideas?sort=discoveredAt:desc">
                 <Button className="w-full justify-start gap-2" variant="outline">
                   <Sparkles className="h-4 w-4" />
                   What&apos;s New

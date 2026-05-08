@@ -18,6 +18,7 @@ from scrapers.etsy_scraper import EtsyScraper
 from scrapers.whop_scraper import WhopScraper
 from pipeline.extraction import deduplicate_signals, extract_ideas_from_clusters
 from pipeline.persistence import save_ideas_to_db
+from aggregate_trends import aggregate_trends
 
 # Configure logging
 logging.basicConfig(
@@ -123,8 +124,12 @@ async def run_single_scraper(name: str) -> dict:
             result["ideas_saved"] = 0
             result["persistence_error"] = str(e)
 
-        for idea in ideas:
-            logger.info(f"  IDEA: {idea['title']} (score: {idea['compositeScore']})")
+        try:
+            written = aggregate_trends(database_url=DATABASE_URL)
+            result["trend_rows_written"] = written
+        except Exception as e:
+            logger.error(f"  Could not aggregate trends after {name}: {e}")
+            result["trend_rows_written"] = 0
 
     return result
 

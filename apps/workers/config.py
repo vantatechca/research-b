@@ -69,7 +69,8 @@ SEED_KEYWORDS = {
 TARGET_SUBREDDITS = [
     "Peptides", "SARMs", "Nootropics", "Biohackers", "Longevity",
     "AntiAging", "SkincareAddiction", "Supplements", "StackAdvice",
-    "Testosterone", "moreplatesmoredates", "PeptideScience",
+    "Testosterone", "moreplatesmoredates",
+    # NOTE: r/PeptideScience returned HTTP 404 in production — removed to avoid wasting requests.
 ]
 
 # RSS Feed sources
