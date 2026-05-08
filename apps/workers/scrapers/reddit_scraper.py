@@ -18,6 +18,7 @@ just unwrap it manually.
 """
 
 import logging
+import asyncio
 
 import httpx
 
@@ -37,42 +38,49 @@ QUESTION_KEYWORDS = [
 
 class RedditScraper(BaseScraper):
     name = "reddit"
-    # Unauthenticated rate limit is ~10/min. We hit two endpoints per
-    # subreddit, so 6.5s between calls = comfortable margin.
-    rate_limit_delay = 6.5
+    # Within-sub delay between /new and /top. The main throttle is now
+    # concurrency-limited parallel fanout below, not this delay.
+    rate_limit_delay = 1.0
+    # Max subreddits scraped concurrently. Reddit rate-limits by IP so
+    # going wider triggers more 429s. 3 is a comfortable balance — fast
+    # enough to fit inside the web→worker 5min timeout, polite enough to
+    # avoid hammering.
+    max_parallel_subs = 3
 
     async def scrape(self) -> list[Signal]:
-        """Pull /new and /top from each target subreddit via public JSON."""
-        signals: list[Signal] = []
-
-        # Reddit aggressively blocks generic user-agents (e.g. python-requests/X.Y).
-        # Per their API rules, format should be: <platform>:<app>:<version> (by /u/<user>)
-        # We override the base client to inject this header on every request.
+        """Pull /new and /top from each target subreddit in parallel."""
+        # Reddit aggressively blocks generic user-agents. Format must be:
+        # <platform>:<app>:<version> (by /u/<user>)
         headers = {"User-Agent": REDDIT_USER_AGENT or "PeptideIQ/1.0"}
-        client = httpx.AsyncClient(timeout=30.0, headers=headers)
-        self._client = client  # ensures BaseScraper.close() cleans it up
+        self._client = httpx.AsyncClient(timeout=30.0, headers=headers)
 
-        for subreddit_name in TARGET_SUBREDDITS:
-            try:
-                # /new — fresh demand signals, broader filter
-                new_signals = await self._fetch_listing(
-                    subreddit_name, sort="new", limit=25, top_post=False
-                )
-                signals.extend(new_signals)
-                await self.rate_limit()
+        sem = asyncio.Semaphore(self.max_parallel_subs)
 
-                # /top weekly — high-engagement posts, stricter filter
-                top_signals = await self._fetch_listing(
-                    subreddit_name, sort="top", limit=10, top_post=True, time_filter="week"
-                )
-                signals.extend(top_signals)
-                await self.rate_limit()
+        async def scrape_one(subreddit_name: str) -> list[Signal]:
+            async with sem:
+                out: list[Signal] = []
+                try:
+                    new_signals = await self._fetch_listing(
+                        subreddit_name, sort="new", limit=25, top_post=False
+                    )
+                    out.extend(new_signals)
+                    await self.rate_limit()
 
-            except Exception as e:
-                logger.error(f"Error scraping r/{subreddit_name}: {e}")
-                self.errors.append(f"r/{subreddit_name}: {str(e)}")
+                    top_signals = await self._fetch_listing(
+                        subreddit_name, sort="top", limit=10,
+                        top_post=True, time_filter="week",
+                    )
+                    out.extend(top_signals)
+                except Exception as e:
+                    logger.error(f"Error scraping r/{subreddit_name}: {e}")
+                    self.errors.append(f"r/{subreddit_name}: {str(e)}")
+                return out
 
-        return signals
+        # Fan out across all configured subreddits, max 3 in flight at once.
+        results = await asyncio.gather(
+            *(scrape_one(sub) for sub in TARGET_SUBREDDITS)
+        )
+        return [s for sub_results in results for s in sub_results]
 
     async def _fetch_listing(
         self,
